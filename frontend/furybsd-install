@@ -1,0 +1,182 @@
+#!/bin/sh
+
+echo "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+echo "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+echo "IIIIIIIIIIIIII Bundled installer script IIIIIIIIIIIIII"
+echo "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+echo "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+
+# Export our variables
+LIVEFS="/"
+FSMNT="/mnt"
+DESTPOOL=$(zpool list -H | grep /mnt | awk -F '\t' '{print $1;}')
+
+# As the first thing, only answer with
+# INSTALLER_MIB_NEEDED=1234567890
+# then immediately exit
+# if INSTALLER_PRINT_MIB_NEEDED is set. This is needed for the graphical installer frontend
+if [ -n "${INSTALLER_PRINT_MIB_NEEDED}" ] ; then
+  # echo INSTALLER_MIB_NEEDED=$(df -m / | awk '{print $2}' | tail -n 1)
+  bytes=$(zpool get -Hpo value allocated livecd)
+  mib=$(echo "${bytes}/1024/1024" | bc) # Convert bytes to MiB
+  echo "INSTALLER_MIB_NEEDED=${mib}"
+  exit 0
+fi
+
+env | grep "INSTALLER_"
+
+# Only run as superuser
+if [ "$(id -u)" != "0" ]; then
+  echo "This script must be run as root" 1>&2
+  exit 1
+fi
+
+# Cleanup memory devices created before reroot if they exist
+if [ -e "/dev/md0" ] ; then
+  /sbin/mdconfig -du md0
+fi
+if [ -e "/dev/md1" ] ; then
+  /sbin/mdconfig -du md1
+fi
+
+# Clean up any previous runs
+umount -f ${FSMNT}/dev >/dev/null 2>/dev/null || true
+zpool export -f "${DESTPOOL}" >/dev/null 2>/dev/null || true
+
+# Set hostname
+if [ -n "${INSTALLER_HOSTNAME}" ] ; then
+  echo "FIXME: Implement setting the hostname without asking questions. How?"
+else
+  echo "Environment variable INSTALLER_HOSTNAME not set, running bsdinstall hostname"
+  bsdinstall hostname
+fi
+
+# Install contents of read only uzip to destination pool
+
+if [ -n "${INSTALLER_DEVICE}" ] ; then
+  export ZFSBOOT_DISKS="${INSTALLER_DEVICE}"
+  export ZFSBOOT_PARTITION_SCHEME="GPT"
+  export ZFSBOOT_POOL_NAME="zroot"
+  export ZFSBOOT_BEROOT_NAME="ROOT"
+  export ZFSBOOT_BOOTFS_NAME="default"
+  export ZFSBOOT_DATASET_NESTING="1"
+  export BOOT_BLOCKS_FROM_DISTSET="1"
+  export ZFSBOOT_VDEV_TYPE="stripe"
+  export ZFSBOOT_SWAP_SIZE="0"
+  export ZFSBOOT_CONFIRM_LAYOUT="1"
+  export nonInteractive="YES"
+  env
+  bsdinstall zfsboot
+else
+  echo "Environment variable INSTALLER_DEVICE not set, running bsdinstall zfsboot"
+  bsdinstall zfsboot
+fi
+
+if [ ! -d "/mnt/usr" ] ; then
+  exit 1
+fi
+
+# Clone the file system to disk with cpdup
+cpdup -i0 -s0 -v "${LIVEFS}" "${FSMNT}"
+
+bsdinstall config
+cat /etc/rc.conf | xargs sysrc -f ${FSMNT}/etc/rc.conf # Transfer settings from running /etc/rc.conf to installed one
+bsdinstall entropy
+
+# Cleanup LiveCD restore specific contents from destination pool
+chroot "${FSMNT}" pkg remove -y furybsd-live-settings
+# TODO: Move all of this to pkg scripts of the pkg manifests that have installed these things
+chroot "${FSMNT}" rm /etc/rc.conf.local
+chroot "${FSMNT}" pw userdel liveuser
+chroot "${FSMNT}" pw groupdel liveuser
+chroot "${FSMNT}" rm -rf /usr/home/liveuser
+
+# Configure the new installation
+mount -t devfs devfs ${FSMNT}/dev
+
+# Set root password
+# FIXME: Also handle existing but empty INSTALLER_ROOT_PASSWORD
+if [ -n "${INSTALLER_ROOT_PASSWORD}" ] ; then
+  chroot "${FSMNT}" echo "${INSTALLER_ROOT_PASSWORD}" | pw mod user root -h 0
+else
+  echo "Environment variable INSTALLER_ROOT_PASSWORD not set, running bsdinstall rootpass"
+  bsdinstall rootpass
+fi
+
+# Add regular user
+# Ask for username and/or password in case the graphical installer frontend did not supply them
+if [ -n "${INSTALLER_USERNAME}" ] ; then
+  username="${INSTALLER_USERNAME}"
+else
+  echo "Environment variable INSTALLER_USERNAME not set, asking the user for input"
+  while true; do
+    echo ""
+    echo "Add User"
+    echo "This user will be added to the video, wheel, and webcamd groups."
+      while true; do
+      echo "Username: "
+      read -r username
+      if echo "${username}" | grep -q -E "^[a-z][-a-z0-9]*$"; then
+        break;
+      else
+        echo "Username not valid"
+      fi
+      done
+  done
+fi
+
+# FIXME: Also handle existing but empty INSTALLER_USER_PASSWORD
+if [ -n "${INSTALLER_USER_PASSWORD}" ] ; then
+  password="${INSTALLER_USER_PASSWORD}"
+else
+  echo "Environment variable INSTALLER_USER_PASSWORD not set, asking the user for input"
+  while true; do
+    echo "New Password: "; stty -echo; read -r password; stty echo; echo ""
+    echo "Retype New Password: "; stty -echo; read -r password2; stty echo; echo ""
+    if [ "${password}" = "${password2}" ]; then
+      break;
+    else
+      echo "Passwords did not match!"
+    fi
+  done
+  echo "${username}:::::::::${password}" | chroot "${FSMNT}" adduser -f - && \
+    chroot "${FSMNT}" pw groupmod wheel -m "${username}" && \
+    chroot "${FSMNT}" pw groupmod video -m "${username}" && \
+    chroot "${FSMNT}" pw groupmod webcamd -m "${username}" && break
+fi
+
+if [ -n "${INSTALLER_DEVICE}" ] ; then
+  echo "Not setting time for now; let's handle this by ntpd and dhcp"
+else
+  echo "Environment variable INSTALLER_DEVICE not set, running bsdinstall time"
+  # FIXME: Do we still want this given that we will use ntpd and dhcp timzeones?
+  bsdinstall time
+fi
+
+# Enable additional services needed for desktop
+if [ -f "/usr/local/sbin/lightdm" ] ; then
+  chroot ${FSMNT} sysrc lightdm_enable="YES"
+fi
+if [ -f "/usr/local/sbin/gdm" ] ; then
+  chroot ${FSMNT} sysrc gdm_enable="YES"
+fi
+if [ -f "/usr/local/etc/rc.d/pcdm" ] ; then
+  chroot ${FSMNT} sysrc pcdm_enable="YES"
+fi
+if [ -f "/usr/local/bin/sddm" ] ; then
+  chroot ${FSMNT} sysrc sddm_enable="YES"
+fi
+
+# Cleanup
+umount -f "${FSMNT}/dev" >/dev/null 2>/dev/null || true
+zpool export -f "${DESTPOOL}" >/dev/null 2>/dev/null || true
+echo "Installation finished!"
+
+# Reboot
+if [ -n "${INSTALLER_DEVICE}" ] ; then
+  exit 0
+else
+  echo "Press any key to reboot..."
+  read -r reboot
+  shutdown -r now
+fi
