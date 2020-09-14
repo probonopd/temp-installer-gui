@@ -26,7 +26,7 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import sys, os
+import sys, os, stat
 import shutil, locale
 from datetime import datetime
 import multiprocessing as mp
@@ -81,8 +81,15 @@ class InstallWizard(QtWidgets.QWizard, object):
 
         self.selected_language = None
         self.selected_country = None
-        self.disk_space_required = 0
+        self.selected_disk_device = None
+        self.user_agreed_to_erase = False
+        self.required_mib_on_disk = 0
         self.installer_script = "furybsd-install"
+
+        # For any external binaries, prefer those that are in the same directory as this file.
+        # This can be used to ship a newer installer shell script alongside the installer if needed.
+        if os.path.exists(os.path.dirname(__file__)  + "/" + self.installer_script):
+            self.installer_script = os.path.dirname(__file__)  + "/" + self.installer_script
 
         self.should_show_last_page = False
         self.error_message_nice = "An unknown error occured."
@@ -96,7 +103,7 @@ class InstallWizard(QtWidgets.QWizard, object):
         self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
         # self.setPixmap(QtWidgets.QWizard.BackgroundPixmap, os.path.dirname(__file__) + '/Background.png') # This works in PySide2
         pixmap = QtGui.QPixmap(os.path.dirname(__file__) + '/Background.png')
-        print(pixmap.height())
+        # print(pixmap.height()) # FIXME: This shows that we have the pixmap loaded
         self.setPixmap(QtWidgets.QWizard.WatermarkPixmap, pixmap) # FIXME: Why is this not working in PyQt5?
 
         self.setOption(QtWidgets.QWizard.ExtendedWatermarkPixmap, True)
@@ -146,6 +153,7 @@ class InstallWizard(QtWidgets.QWizard, object):
             proc.startDetached(command, args)
         except:
             self.showErrorPage("The Installer Log cannot be opened.")
+            return
 
     def showErrorPage(self, message):
         print("Show error page")
@@ -153,6 +161,12 @@ class InstallWizard(QtWidgets.QWizard, object):
         # It is not possible jo directly jump to the last page from here, so we need to take a workaround
         self.should_show_last_page = True
         self.error_message_nice = message
+        wizard.button(QtWidgets.QWizard.NextButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.BackButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.CancelButton).hide()
         self.next()
 
     # When we are about to go to the next page, we need to check whether we have to show the error page instead
@@ -221,10 +235,12 @@ class LanguagePage(QtWidgets.QWizardPage, object):
         if shutil.which(wizard.installer_script) == None:
             wizard.showErrorPage("The installer script was not found. Please make sure that you are running the installer on a supported system.")
 
-        # TODO: Check if we can run the installer as root; how to do this?
+        # TODO: Check if we can run the installer as root; e.g., by running it here to get the required disk space (repeat later)
+
         if shutil.which("sudo") == None:
             wizard.showErrorPage(
                 "The sudo binary not found. Please make sure that you are running the installer on a supported system.")
+            return
 
         json_file = QtCore.QFile(os.path.dirname(__file__) + '/languages.json') # https://gist.github.com/piraveen/fafd0d984b2236e809d03a0e306c8a4d
         if json_file.open(QtCore.QIODevice.ReadOnly):
@@ -234,7 +250,8 @@ class LanguagePage(QtWidgets.QWizardPage, object):
 
         self.listwidget = QtWidgets.QListWidget()
         self.listwidget2 = QtWidgets.QListWidget()
-        self.listwidget2.hide()
+        return
+        # self.listwidget2.hide() # FIXME: Why is this needed?
         # self.listwidget.setFont(QtGui.QFont(None, 14, QtGui.QFont.Normal))
 
         # FIXME: Not only react to clicked, but also to selected
@@ -281,23 +298,26 @@ class LanguagePage(QtWidgets.QWizardPage, object):
                         if wizard.selected_language == None:
                             wizard.selected_language = lang_env.split("_")[0] # If we already got one from system_keyboard_layout, use that
                         wizard.selected_country = lang_env.split("_")[1]
-                        self.listwidget.hide()
-                        self.listwidget2.hide()
+                        # self.listwidget.hide() # FIXME: Why is this needed?
+                        # self.listwidget2.hide() # FIXME: Why is this needed?
                         self.completeChanged.emit()
                         wizard.next()
+                        return
             else:
                 # The user has set a keyboard layout but not set $LANG, so use EN for the country
                 wizard.selected_country = "EN"
-                self.listwidget.hide()
-                self.listwidget2.hide()
+                # self.listwidget.hide() # FIXME: Why is this needed?
+                # self.listwidget2.hide() # FIXME: Why is this needed?
                 self.completeChanged.emit()
                 wizard.next()
+                return
 
         except:
-            self.listwidget.hide()
-            self.listwidget2.hide()
+            # self.listwidget.hide() # FIXME: Why is this needed?
+            # self.listwidget2.hide() # FIXME: Why is this needed?
             wizard.showErrorPage(
                 "There was an error while determining whether the language has already been set on this system.")
+            return
 
     def clicked1(self):
         self.selected_text = self.listwidget.selectedItems()[0].text()
@@ -456,6 +476,7 @@ class CountryPage(QtWidgets.QWizardPage, object):
 
 #############################################################################
 # Timezone
+# Currently not used because we rely on dhcpd to get the timezone...
 #############################################################################
 
 # NOTE: There might be more than one timezone layout for a country,
@@ -518,23 +539,28 @@ class IntroPage(QtWidgets.QWizardPage, object):
 # License
 #############################################################################
 
-license_page = QtWidgets.QWizardPage()
-license_page.setTitle('FreeBSD License')
-license_page.setSubTitle('To continue installing the software, you must agree to the terms of the software license agreement.')
-license_label = QtWidgets.QLabel()
-license_label.setWordWrap(True)
-license_layout = QtWidgets.QVBoxLayout(license_page)
-license_text = open('/COPYRIGHT', 'r').read()
-license_label.setText("\n".join(license_text.split("\n")[3:])) # Skip the first 3 lines
-license_label.setFont(QtGui.QFont(None, 9, QtGui.QFont.Normal))
-license_area = QtWidgets.QScrollArea();
-license_area.setWidget(license_label)
-license_layout.addWidget(license_area)
+class LicensePage(QtWidgets.QWizardPage, object):
+    def __init__(self):
 
-additional_licenses_label = QtWidgets.QLabel()
-additional_licenses_label.setWordWrap(True)
-additional_licenses_label.setText("Additional components may be distributed under different licenses as stated in the respective documentation.")
-license_layout.addWidget(additional_licenses_label)
+        print("Preparing LicensePage")
+        super().__init__()
+
+        self.setTitle('FreeBSD License')
+        self.setSubTitle('To continue installing the software, you must agree to the terms of the software license agreement.')
+        license_label = QtWidgets.QLabel()
+        license_label.setWordWrap(True)
+        license_layout = QtWidgets.QVBoxLayout(self)
+        license_text = open('/COPYRIGHT', 'r').read()
+        license_label.setText("\n".join(license_text.split("\n")[3:])) # Skip the first 3 lines
+        license_label.setFont(QtGui.QFont(None, 9, QtGui.QFont.Normal))
+        license_area = QtWidgets.QScrollArea();
+        license_area.setWidget(license_label)
+        license_layout.addWidget(license_area)
+
+        additional_licenses_label = QtWidgets.QLabel()
+        additional_licenses_label.setWordWrap(True)
+        additional_licenses_label.setText("Additional components may be distributed under different licenses as stated in the respective documentation.")
+        license_layout.addWidget(additional_licenses_label)
 
 
 #############################################################################
@@ -546,14 +572,12 @@ class DiskPage(QtWidgets.QWizardPage, object):
 
         print("Preparing DiskPage")
         super().__init__()
-        self.user_agreed_to_erase = False
         # We currently determine the required disk space by looking at the disk space needed by /
         # and multiplying by 1.3 as a safety measure; this may be too much?
         # NOTE: If the installer logic changes and the files are not copied from / but e.g., directly from an image
         # then the following line needs to be changed to reflect the changed logic accordingly
-        _, space_used_on_root_mountpoint, _ = shutil.disk_usage("/")
-        wizard.disk_space_required = int(float(space_used_on_root_mountpoint * 1.3))
-        self.timer = None
+
+        self.timer = QtCore.QTimer() # Used to periodically check the available disks
         self.old_ds = None # The disks we have recognized so far
         self.setTitle('Select Destination Disk')
         self.setSubTitle('All data on the selected disk will be erased.')
@@ -561,22 +585,56 @@ class DiskPage(QtWidgets.QWizardPage, object):
         self.disk_listwidget.setViewMode(QtWidgets.QListView.IconMode)
         self.disk_listwidget.setIconSize(QtCore.QSize(48, 48))
         self.disk_listwidget.setSpacing(24)
+        self.disk_listwidget.itemSelectionChanged.connect(self.onSelectionChanged)
+        disk_vlayout = QtWidgets.QVBoxLayout(self)
+        disk_vlayout.addWidget(self.disk_listwidget)
+        self.label = QtWidgets.QLabel()
+        disk_vlayout.addWidget(self.label)
+
+    def getMiBRequiredOnDisk(self):
+        # _, space_used_on_root_mountpoint, _ = shutil.disk_usage("/")
+        # return int(float(space_used_on_root_mountpoint * 1.3))
+        proc = QtCore.QProcess()
+        command = 'sudo'
+        args = ["-n", "-E", wizard.installer_script] # -E to pass environment variables into the command ran with sudo
+        env = QtCore.QProcessEnvironment.systemEnvironment()
+        env.insert("INSTALLER_PRINT_MIB_NEEDED", "YES")
+        proc.setProcessEnvironment(env)
+        try:
+            print("Starting %s %s" % (command, args))
+            proc.start(command, args)
+        except:
+            return 0
+        proc.waitForFinished();
+        output_lines = proc.readAllStandardOutput().split("\n")
+
+        mib = 0
+        for output_line in output_lines:
+            print(str(output_line))
+            if "INSTALLER_MIB_NEEDED=" in str(output_line):
+                mib=int(output_line.split("=")[1])
+                print("Response from the installer script: %i" % mib)
+                correction_factor = 1.4 # FIXME: Correction factor due to compression differences; seems not needed
+                adjusted_mib = mib * correction_factor
+                print("Adjusted MiB needed: %i" % adjusted_mib)
+                return adjusted_mib
+        return 0
 
     def initializePage(self):
         print("Displaying DiskPage")
+
+        wizard.required_mib_on_disk = self.getMiBRequiredOnDisk()
+        self.disk_listwidget.clearSelection() # If the user clicked back and forth, start with nothing selected
         self.periodically_list_disks()
-        disk_vlayout = QtWidgets.QVBoxLayout(self)
-        disk_vlayout.addWidget(self.disk_listwidget)
-        self.disk_listwidget.itemSelectionChanged.connect(self.show_warning)
-        # QtCore.QObject.connect(self.disk_listwidget, QtCore.SIGNAL("itemClicked(QListWidgetItem *)"), self.show_warning)
-        label = QtWidgets.QLabel()
 
+        if wizard.required_mib_on_disk < 5:
+            self.timer.stop()
+            wizard.showErrorPage("The installer script did not report the required disk space. Are you running the installer on a supported system? Can you run the installer script with sudo without needing a password?")
+            self.disk_listwidget.hide() # FIXME: Why is this needed? Can we do without?
+            return
 
-        print("Disk space required: %d GiB" % (wizard.disk_space_required // (2 ** 30)))
-        label.setText("Disk space required: %s MiB" % f"{(wizard.disk_space_required // (2 ** 20)):,}")
-        disk_vlayout.addWidget(label)
-
-        super().show()
+        print("Disk space required: %d MiB" % wizard.required_mib_on_disk)
+        self.label.setText("Disk space required: %s MiB" % wizard.required_mib_on_disk)
 
     def cleanupPage(self):
         print("Leaving DiskPage")
@@ -584,9 +642,8 @@ class DiskPage(QtWidgets.QWizardPage, object):
     def periodically_list_disks(self):
         print("periodically_list_disks")
         self.list_disks()
-        self.timer = QtCore.QTimer() # Used to periodically check the available disks
+
         self.timer.setInterval(3000)
-        # self.connect(self.timer, QtCore.SIGNAL("timeout()"), self.list_disks)
         self.timer.timeout.connect(self.list_disks)
         self.timer.start()
 
@@ -603,7 +660,7 @@ class DiskPage(QtWidgets.QWizardPage, object):
                 # print(di.keys())
                 # Only show disks that are above minimum_target_disk_size and are writable
                 available_bytes = int(di.get("mediasize").split(" ")[0])
-                if (available_bytes >= wizard.disk_space_required) and di.get("geomname").startswith("rd") == False \
+                if (available_bytes >= wizard.required_mib_on_disk) and di.get("geomname").startswith("rd") == False \
                         and (di.get("geomname").startswith("da0") == False):
                     # item.setTextAlignment()
                     title = "%s on %s (%s GiB)" % (di.get("descr"), di.get("geomname"), f"{(available_bytes // (2 ** 30)):,}")
@@ -615,8 +672,15 @@ class DiskPage(QtWidgets.QWizardPage, object):
                     self.disk_listwidget.addItem(item)
             self.old_ds = ds
 
+    def onSelectionChanged(self):
+        wizard.user_agreed_to_erase = False
+        self.show_warning()
+
     def show_warning(self):
-        self.user_agreed_to_erase = False
+        # After we remove the selection, do not call this again
+        if len(self.disk_listwidget.selectedItems()) != 1:
+            return
+        wizard.user_agreed_to_erase = False
         reply = QtWidgets.QMessageBox.warning(
             wizard,
             "Warning",
@@ -626,16 +690,31 @@ class DiskPage(QtWidgets.QWizardPage, object):
         )
         if reply == QtWidgets.QMessageBox.Yes:
             print("User has agreed to erase all contents of this disk")
-            self.user_agreed_to_erase = True
+            wizard.user_agreed_to_erase = True
+        else:
+            self.disk_listwidget.clearSelection()
+            pass
         self.isComplete() # Calling it like this does not make its result get used
         self.completeChanged.emit() # But like this isComplete() gets called and its result gets used
 
     def isComplete(self):
-        if self.user_agreed_to_erase == True:
-            self.timer.stop() # FIXME: This does not belong here, but cleanupPage() gets called only if the user goes back...
-            return True
-        else:
-            return False
+        if wizard.user_agreed_to_erase == True:
+            ds = disks.get_disks()
+            # Given a clear text label, get back the rdX
+            for d in self.old_ds:
+                di = disks.get_disk(d)
+                searchstring = " on " + str(di.get("geomname")) + " "
+                print(searchstring)
+                if len(self.disk_listwidget.selectedItems()) < 1:
+                    return False
+                if searchstring in self.disk_listwidget.selectedItems()[0].text():
+                    wizard.selected_disk_device = str(di.get("geomname"))
+                    self.timer.stop() # FIXME: This does not belong here, but cleanupPage() gets called only
+                    # if the user goes back, not when they go forward...
+                    return True
+
+        selected_disk_device = None
+        return False
 
 
 #############################################################################
@@ -772,14 +851,11 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         self.mib_used_on_target_disk = 0
         self.ext_process = QtCore.QProcess()
 
-        layout = QtWidgets.QVBoxLayout(self)
+        self.layout = QtWidgets.QVBoxLayout(self)
 
         self.progress = QtWidgets.QProgressBar(self)
-        # self.progress.setMaximum(wizard.disk_space_required/1024/1024) # MiB
-        self.progress.setMaximum(100)
-        self.progress.setValue(50)
 
-        layout.addWidget(self.progress, True)
+        self.layout.addWidget(self.progress, True)
 
         # To update the progress bar, we need to know how much data is going to be copied
         # and we need to check how full the target disk is every few seconds
@@ -790,31 +866,69 @@ class InstallationPage(QtWidgets.QWizardPage, object):
 
     def initializePage(self):
         print("Displaying InstallationPage")
+        wizard.button(QtWidgets.QWizard.NextButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.BackButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.CancelButton).hide()
+
+        print("wizard.required_mib_on_disk: %i" % wizard.required_mib_on_disk)
+        self.progress.setMaximum(wizard.required_mib_on_disk)
+        self.progress.setValue(0)
 
         # Compute parameters to be handed over to the installer script
         print("wizard.selected_language: %s" % wizard.selected_language)
         print("wizard.selected_country: %s" % wizard.selected_country)
 
+        # Launch installer script
+        # TODO: Pass arguments as configuration file/script, enviroment variables or arguments?
+
+        command = "sudo"
+        args = ["-n", "-E", wizard.installer_script] # -E to pass environment variables into the command ran with sudo
+        env = QtCore.QProcessEnvironment.systemEnvironment()
+
+        # Sanity check that we really have a device and permission to erase it
+        dev_file = "/dev/" + wizard.selected_disk_device
+        if wizard.selected_disk_device is None or os.path.exists(dev_file) is False:
+            # self.progress.hide() # FIXME: Why is this needed? Spacing is off anyway!
+            wizard.showErrorPage("The selected disk device %s is not found." % dev_file)
+            return # Stop doing anything here
+
+        if wizard.user_agreed_to_erase is False:
+            # self.progress.hide() # FIXME: Why is this needed? Spacing is off anyway!
+            wizard.showErrorPage("Did not get permission to erase the target device.")
+            return  # Stop doing anything here
+
+        # If we determined a custom keyboard layout, then we skipped the language selection
+        # page, hence we need to pick a sane default here
+        if wizard.selected_language is None:
+            wizard.selected_language = "en"
+
         # TODO:
         # Calculate the zh_CN.UTF-8 string for the locale
         # NOTE: We need to check whether we have a matching combination since the user may have set the
         # system e.g., to en (language) but DE (country, derived from keyboard layout). In those cases,
-        # assume the en_US.UTF-8 for the locale but do try to set the correct keyboard layout
+        # assume en_US.UTF-8 for the locale but do try to set the correct keyboard layout
 
-        # Launch installer script
-        # TODO: Pass arguments as configuration file/script, enviroment variables or arguments?
+        if wizard.selected_language + "_" + wizard.selected_country in supported_locales_utf8:
+            computed_locale_utf8 = wizard.selected_language + "_" + wizard.selected_country + ".UTF-8"
+        else:
+            computed_locale_utf8 = "en" + "_" + "US" + "-UTF-8"
 
-        command = wizard.installer_script
-        args = []
-        env = QtCore.QProcessEnvironment.systemEnvironment()
-        env.insert("INSTALLER_ROOT_PASSWORD", "Handed over from GUI")
-        env.insert("INSTALLER_USERNAME", "Handed over from GUI")
-        env.insert("INSTALLER_USER_PASSWORD", "Handed over from GUI")
-        env.insert("INSTALLER_HOSTNAME", "Handed over from GUI")
-        env.insert("INSTALLER_DEVICE", "Handed over from GUI")
-        env.insert("INSTALLER_LANGUAGE", "Handed over from GUI")
-        env.insert("INSTALLER_COUNTRY", "Handed over from GUI")
-        env.insert("INSTALLER_LOCALE_UTF8", "Handed over from GUI")
+        env.insert("INSTALLER_ROOT_PASSWORD", self.field('rootpw'))
+        env.insert("INSTALLER_USERNAME", self.field('username'))
+        env.insert("INSTALLER_USER_PASSWORD", self.field('userpw'))
+        env.insert("INSTALLER_HOSTNAME", self.field('username')+"s-computer")
+        env.insert("INSTALLER_DEVICE", wizard.selected_disk_device)
+        env.insert("INSTALLER_LANGUAGE", wizard.selected_language)
+        env.insert("INSTALLER_COUNTRY", wizard.selected_country)
+        env.insert("INSTALLER_LOCALE_UTF8", computed_locale_utf8)
+
+        # Print the keys to stderr for debugging
+        for key in env.keys():
+            if str(key).startswith("INSTALLER_"):
+                print("%s=%s" %(key, env.value(key)))
 
         self.ext_process.setProcessEnvironment(env)
         self.ext_process.setStandardOutputFile(wizard.logfile)
@@ -825,11 +939,12 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         self.periodicallyCheckProgress()
         try:
             pid = self.ext_process.start()
-            print(pid)
-            print("Installer script process started")
-
+            # print(pid) # This is None for non-detached processes. If we ran detached, we would get the pid back here
+            print("Installer script process %s %s started" % (command, args))
         except:
+            # self.progress.hide() # FIXME: Why is this needed? Spacing is off anyway!
             self.showErrorPage("The installer cannot be launched.")
+            return  # Stop doing anything here
 
 
     def onProcessFinished(self):
@@ -843,12 +958,14 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         self.installer_script_has_exited = True
         self.timer.stop()
         if(exit_code != 0):
+            # self.progress.hide() # FIXME: Why is this needed? Spacing is off anyway!
             wizard.showErrorPage("The installation did not succeed. Please see the Installer Log for more information.")
+            return  # Stop doing anything here
         else:
             wizard.next()
 
     def periodicallyCheckProgress(self):
-        print("periodically_check_progress")
+        # print("periodically_check_progress")
         self.checkProgress()
         self.timer = QtCore.QTimer() # Used to periodically check the fill level of the target disk
         self.timer.setInterval(1000)
@@ -856,10 +973,17 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         self.timer.start()
 
     def checkProgress(self):
-        print("check_progress")
-        print("self.progress.value: %i", self.progress.value())
-        self.progress.setValue(self.progress.value() + 10)
-        # self.progress.setValue(self.mib_used_on_target_disk)
+        # print("check_progress")
+        # print("self.progress.value: %i", self.progress.value())
+
+        # If the calculated percentage is over 100%, then set to pulsating progress bar
+        if self.progress.value() > wizard.required_mib_on_disk:
+            self.progress.setRange(0, 0)
+        else:
+            # self.progress.setValue(self.progress.value() + 100)
+            _, used, _ = shutil.disk_usage("/mnt")
+            self.mib_used_on_target_disk = used // (2**20)
+            self.progress.setValue(self.mib_used_on_target_disk)
 
 
 #############################################################################
@@ -873,6 +997,13 @@ class SuccessPage(QtWidgets.QWizardPage, object):
         super().__init__()
 
         self.setFinalPage(True) # FIXME: Why does this not remove the Next button?
+        wizard.button(QtWidgets.QWizard.NextButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.BackButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.CancelButton).hide()
+
         self.setTitle('Installation Complete')
         self.setSubTitle('The installation succeeded.')
 
@@ -895,6 +1026,18 @@ class SuccessPage(QtWidgets.QWizardPage, object):
 
         layout.addWidget(label)
         self.setButtonText(wizard.FinishButton, "Restart")
+        wizard.button(QtWidgets.QWizard.FinishButton).clicked.connect(self.restart_computer)
+
+    def restart_computer(self):
+        proc = QtCore.QProcess()
+        command = 'shutdown'
+        args = ['-r', 'now']
+        print(command, args)
+        try:
+            proc.startDetached(command, args)
+        except:
+            self.showErrorPage("Could not restart the computer.")
+            return
 
 #############################################################################
 # Error page
@@ -907,6 +1050,13 @@ class ErrorPage(QtWidgets.QWizardPage, object):
         super().__init__()
 
         self.setFinalPage(True) # FIXME: Why does this not remove the Next button?
+        wizard.button(QtWidgets.QWizard.NextButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.BackButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.CancelButton).hide()
+
         self.setTitle('Error')
         self.setSubTitle('The installation could not be performed.')
 
@@ -924,13 +1074,14 @@ class ErrorPage(QtWidgets.QWizardPage, object):
         self.layout = QtWidgets.QVBoxLayout(self)
         self.layout.addWidget(center_widget, True) # True = add stretch vertically
 
-    def initializePage(self):
-        print("Displaying DiskPage")
-        label = QtWidgets.QLabel()
-        label.setWordWrap(True)
-        label.setText(wizard.error_message_nice)
+        self.label = QtWidgets.QLabel()  # Putting it in initializePage would add another one each time the page is displayed when going back and forth
+        self.layout.addWidget(self.label)
 
-        self.layout.addWidget(label)
+    def initializePage(self):
+        print("Displaying ErrorPage")
+        self.label.setWordWrap(True)
+        self.label.clear()
+        self.label.setText(wizard.error_message_nice)
         self.setButtonText(wizard.FinishButton, "Exit")
 
 #############################################################################
