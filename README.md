@@ -1,6 +1,6 @@
 # Graphical installer frontend
 
-__WORK IN PROGRESS__. DO NOT USE ON SYSTEMS WITH VALUABLE DATA AS IT MAY OVERWRITE YOUR DISK. This is a temporary home until this is properly integrated somewhere.
+__WORK IN PROGRESS__. DO NOT USE ON SYSTEMS WITH VALUABLE DATA AS IT MAY OVERWRITE THE CONTENTS OF YOUR DISK. This is a temporary home until this is properly tested and integrated.
 
 ![](https://user-images.githubusercontent.com/2480569/93003383-836da580-f53e-11ea-976c-76c1a29a27e0.png)
 
