@@ -875,7 +875,7 @@ class InstallationPage(QtWidgets.QWizardPage, object):
 
         print("wizard.required_mib_on_disk: %i" % wizard.required_mib_on_disk)
         self.progress.setMaximum(wizard.required_mib_on_disk)
-        self.progress.setValue(0)
+        # self.progress.setValue(0)
 
         # Compute parameters to be handed over to the installer script
         print("wizard.selected_language: %s" % wizard.selected_language)
