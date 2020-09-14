@@ -1,6 +1,6 @@
 # Graphical installer frontend
 
-__WORK IN PROGRESS__. Currently this code does not install anything but lets you play with the GUI. This is a temporary home until this is properly integrated somewhere.
+__WORK IN PROGRESS__. Currently this code does not install anything (that is the job of the installer shell script which does not live in this repository) but lets you play with the GUI. This is a temporary home until this is properly integrated somewhere.
 
 ![](https://user-images.githubusercontent.com/2480569/93003383-836da580-f53e-11ea-976c-76c1a29a27e0.png)
 
