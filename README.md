@@ -1,6 +1,6 @@
 # Graphical installer frontend
 
-__WORK IN PROGRESS__. Currently this code does not install anything (that is the job of the installer shell script which does not live in this repository) but lets you play with the GUI. This is a temporary home until this is properly integrated somewhere.
+__WORK IN PROGRESS__. DO NOT USE ON SYSTEMS WITH VALUABLE DATA AS IT MAY OVERWRITE YOUR DISK. This is a temporary home until this is properly integrated somewhere.
 
 ![](https://user-images.githubusercontent.com/2480569/93003383-836da580-f53e-11ea-976c-76c1a29a27e0.png)
 
@@ -17,9 +17,9 @@ Environment variables are the proposed way for communicating back and forth betw
 
 ### For retrieving the required space on the target disk
 
-* `INSTALLER_REQUIRED_SPACE=BYTES`
+* `INSTALLER_PRINT_MIB_NEEDED=YES`
 
-When this is present, the installer must respond with just the number of bytes required on the target disk, e.g., `2357691235`. The installer script must write this to stderr and then exit with no further action.
+When this is present, the installer must respond with just the number of bytes required on the target disk, e.g., `INSTALLER_MIB_NEEDED=2158`. The installer script must write this to stderr and then exit with no further action.
 
 ### For performing the installation
 
