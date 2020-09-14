@@ -139,11 +139,11 @@ else
       echo "Passwords did not match!"
     fi
   done
-  echo "${username}:::::::::${password}" | chroot "${FSMNT}" adduser -f - && \
-    chroot "${FSMNT}" pw groupmod wheel -m "${username}" && \
-    chroot "${FSMNT}" pw groupmod video -m "${username}" && \
-    chroot "${FSMNT}" pw groupmod webcamd -m "${username}" && break
 fi
+echo "${username}:::::::::${password}" | chroot "${FSMNT}" adduser -f - && \
+  chroot "${FSMNT}" pw groupmod wheel -m "${username}" && \
+  chroot "${FSMNT}" pw groupmod video -m "${username}" && \
+  chroot "${FSMNT}" pw groupmod webcamd -m "${username}" && break
 
 if [ -n "${INSTALLER_DEVICE}" ] ; then
   echo "Not setting time for now; let's handle this by ntpd and dhcp"
