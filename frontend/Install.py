@@ -719,6 +719,8 @@ class DiskPage(QtWidgets.QWizardPage, object):
 
 #############################################################################
 # Root password
+# NOTE: We do not show the root password page since we disable direct root login;
+# users in the wheel group can use sudo/doas instead
 #############################################################################
 
 class RootPwPage(QtWidgets.QWizardPage, object):
@@ -916,7 +918,7 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         else:
             computed_locale_utf8 = "en" + "_" + "US" + "-UTF-8"
 
-        env.insert("INSTALLER_ROOT_PASSWORD", self.field('rootpw'))
+        # env.insert("INSTALLER_ROOT_PASSWORD", self.field('rootpw'))
         env.insert("INSTALLER_USERNAME", self.field('username'))
         env.insert("INSTALLER_USER_PASSWORD", self.field('userpw'))
         env.insert("INSTALLER_HOSTNAME", self.field('username')+"s-computer")
@@ -1102,8 +1104,10 @@ license_page = LicensePage()
 wizard.addPage(license_page)
 disk_page = DiskPage()
 wizard.addPage(disk_page)
-rootpw_page=RootPwPage()
-wizard.addPage(rootpw_page)
+# Do not show the root password page since we disable direct root login;
+# users in the wheel group can use sudo/doas instead
+# rootpw_page=RootPwPage()
+# wizard.addPage(rootpw_page)
 user_page = UserPage()
 wizard.addPage(user_page)
 installation_page = InstallationPage()
