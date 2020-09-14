@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# This script is in this place for testing only
+
 echo "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
 echo "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
 echo "IIIIIIIIIIIIII Bundled installer script IIIIIIIIIIIIII"
@@ -94,14 +96,8 @@ chroot "${FSMNT}" rm -rf /usr/home/liveuser
 # Configure the new installation
 mount -t devfs devfs ${FSMNT}/dev
 
-# Set root password
-# FIXME: Also handle existing but empty INSTALLER_ROOT_PASSWORD
-if [ -n "${INSTALLER_ROOT_PASSWORD}" ] ; then
-  chroot "${FSMNT}" echo "${INSTALLER_ROOT_PASSWORD}" | pw mod user root -h 0
-else
-  echo "Environment variable INSTALLER_ROOT_PASSWORD not set, running bsdinstall rootpass"
-  bsdinstall rootpass
-fi
+# Disable direct root login; users in the wheel group can use sudo/doas instead
+sed -i -e 's|:/root:/bin/.*|:/root:/bin/nologin|g' "${FSMNT}/etc/passwd"
 
 # Add regular user
 # Ask for username and/or password in case the graphical installer frontend did not supply them
