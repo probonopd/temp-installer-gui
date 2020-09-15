@@ -1055,6 +1055,7 @@ class SuccessPage(QtWidgets.QWizardPage, object):
 
         label = QtWidgets.QLabel()
         label.setText("FreeBSD has been installed on your computer, click 'Restart' to begin using it.")
+        layout.addWidget(label)
 
     def initializePage(self):
         print("Displaying SuccessPage")
@@ -1067,7 +1068,6 @@ class SuccessPage(QtWidgets.QWizardPage, object):
         wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
         wizard.button(QtWidgets.QWizard.CancelButton).hide()
 
-        layout.addWidget(label)
         self.setButtonText(wizard.FinishButton, "Restart")
         wizard.button(QtWidgets.QWizard.FinishButton).clicked.connect(self.restart_computer)
 
