@@ -95,6 +95,11 @@ class InstallWizard(QtWidgets.QWizard, object):
         self.error_message_nice = "An unknown error occured."
 
         self.setWizardStyle(QtWidgets.QWizard.MacStyle)
+
+        self.setOptions(
+            QtWidgets.QWizard.NoBackButtonOnLastPage | QtWidgets.QWizard.NoBackButtonOnStartPage | QtWidgets.QWizard.NoCancelButtonOnLastPage)
+
+
         self.setWindowTitle("Install FreeBSD")
         self.setFixedSize(800, 550)
 
@@ -614,8 +619,8 @@ class DiskPage(QtWidgets.QWizardPage, object):
             if "INSTALLER_MIB_NEEDED=" in str(output_line):
                 mib=int(output_line.split("=")[1])
                 print("Response from the installer script: %i" % mib)
-                correction_factor = 1.4 # FIXME: Correction factor due to compression differences; seems not needed
-                adjusted_mib = mib * correction_factor
+                correction_factor = 1.5 # FIXME: Correction factor due to compression differences
+                adjusted_mib = int(mib * correction_factor)
                 print("Adjusted MiB needed: %i" % adjusted_mib)
                 return adjusted_mib
         return 0
@@ -746,7 +751,8 @@ class RootPwPage(QtWidgets.QWizardPage, object):
         rootpw_lineedit2.setEchoMode(QtWidgets.QLineEdit.Password)
         rootpw_vlayout.addWidget(rootpw_lineedit2)
         self.rootpw_label_comment = QtWidgets.QLabel()
-        self.rootpw_label_comment.setText("The passwords do not match")  # TODO: make red
+        self.rootpw_label_comment.setText("The passwords do not match")
+        self.rootpw_label_comment.setStyleSheet("color: red")
         self.rootpw_label_comment.setVisible(False)
         rootpw_vlayout.addWidget(self.rootpw_label_comment)
         self.registerField('rootpw*', rootpw_lineedit) # * sets the field mandatory
@@ -806,33 +812,54 @@ class UserPage(QtWidgets.QWizardPage, object):
         userpassword2_lineedit = QtWidgets.QLineEdit()
         userpassword2_lineedit.setEchoMode(QtWidgets.QLineEdit.Password)
         user_vlayout.addWidget(userpassword2_lineedit)
+        self.registerField('username*', username_lineEdit)
+        self.registerField('userpw*', userpassword_lineedit)
+        self.registerField('userpw2*', userpassword2_lineedit)
+        # Autologin
+        self.autologin_checkbox = QtWidgets.QCheckBox()
+        self.autologin_checkbox.setText("To be implemented: Log this user automatically into the desktop (autologin)")
+         # self.autologin_checkbox.setWordWrap(True) # Does not work, https://bugreports.qt.io/browse/QTBUG-5370
+        user_vlayout.addWidget(self.autologin_checkbox)
+        self.registerField('enable_autologin*', self.autologin_checkbox)
+        # sshd
+        self.sshd_checkbox = QtWidgets.QCheckBox()
+        self.sshd_checkbox.setText("Enable users to log in over the network (ssh)")
+
+        # self.sshd_checkbox.setWordWrap(True) # Does not work, https://bugreports.qt.io/browse/QTBUG-5370
+        user_vlayout.addWidget(self.sshd_checkbox)
+        self.registerField('enable_ssh*', self.sshd_checkbox)
+        # Warning if passwords don't match
         self.user_label_comment = QtWidgets.QLabel()
         self.user_label_comment.setText("The passwords do not match") # TODO: make red
         self.user_label_comment.setVisible(False)
         user_vlayout.addWidget(self.user_label_comment)
-        self.registerField('username*', username_lineEdit)
-        self.registerField('userpw*', userpassword_lineedit)
-        self.registerField('userpw2*', userpassword2_lineedit)
 
     def isComplete(self):
         self.no_password_is_ok = False
         if (self.field('userpw') == self.field('userpw2')):
             self.user_label_comment.setVisible(False)
+            self.sshd_checkbox.setEnabled(True)
         else:
             self.user_label_comment.setVisible(True)
-
         if (self.field('userpw') == self.field('userpw2')) and self.field('username') != "":
-            return True
-        else:
-            return False
+            if self.sshd_checkbox.isChecked() == False:
+                return True
+            if self.sshd_checkbox.isChecked() == True and self.field('userpw') != "":
+                return True
+        return False
 
     def validatePage(self):
-        if self.field('userpw') == "" and self.no_password_is_ok == False:
-            show_the_no_password_warning(self)
-            return False
+        if self.sshd_checkbox.isChecked() == False:
+            if self.field('userpw') == "" and self.no_password_is_ok == False:
+                show_the_no_password_warning(self)
+                return False
+            else:
+                return True
         else:
-            return True
-
+            if self.field('userpw') == "":
+                return False
+            else:
+                return True
 
 #############################################################################
 # Installation page
@@ -876,8 +903,8 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         wizard.button(QtWidgets.QWizard.CancelButton).hide()
 
         print("wizard.required_mib_on_disk: %i" % wizard.required_mib_on_disk)
+        self.progress.setValue(0)  # Prevent random start value; FIXME: Does not seem to work? Shows 75% for a split-second
         self.progress.setMaximum(wizard.required_mib_on_disk)
-        # self.progress.setValue(0)
 
         # Compute parameters to be handed over to the installer script
         print("wizard.selected_language: %s" % wizard.selected_language)
@@ -887,7 +914,7 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         # TODO: Pass arguments as configuration file/script, enviroment variables or arguments?
 
         command = "sudo"
-        args = ["-n", "-E", wizard.installer_script] # -E to pass environment variables into the command ran with sudo
+        args = ["-n", "-E", "/bin/sh", "-e", "-x", wizard.installer_script] # -E to pass environment variables into the command ran with sudo
         env = QtCore.QProcessEnvironment.systemEnvironment()
 
         # Sanity check that we really have a device and permission to erase it
@@ -927,6 +954,11 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         env.insert("INSTALLER_COUNTRY", wizard.selected_country)
         env.insert("INSTALLER_LOCALE_UTF8", computed_locale_utf8)
 
+        if self.field('enable_autologin') == True:
+            env.insert("INSTALLER_ENABLE_AUTOLOGIN", "YES")
+        if self.field('enable_ssh') == True:
+            env.insert("INSTALLER_ENABLE_SSH", "YES")
+
         # Print the keys to stderr for debugging
         for key in env.keys():
             if str(key).startswith("INSTALLER_"):
@@ -938,6 +970,7 @@ class InstallationPage(QtWidgets.QWizardPage, object):
         self.ext_process.finished.connect(self.onProcessFinished)
         self.ext_process.setProgram(command)
         self.ext_process.setArguments(args)
+
         self.periodicallyCheckProgress()
         try:
             pid = self.ext_process.start()
@@ -1058,6 +1091,8 @@ class ErrorPage(QtWidgets.QWizardPage, object):
         wizard.button(QtWidgets.QWizard.NextButton).hide()
         wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
         wizard.button(QtWidgets.QWizard.CancelButton).hide()
+        wizard.button(QtWidgets.QWizard.FinishButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.FinishButton).hide()
 
         self.setTitle('Error')
         self.setSubTitle('The installation could not be performed.')
