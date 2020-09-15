@@ -96,10 +96,11 @@ chroot "${FSMNT}" rm -rf /usr/home/liveuser
 # Configure the new installation
 mount -t devfs devfs ${FSMNT}/dev
 
-# Disable direct root login; users in the wheel group can use sudo/doas instead
-echo "Disabling direct root login; users in the wheel group can use sudo/doas instead"
-cat /etc/passwd | sed -e 's|:/root:/.*$|:/root:/usr/sbin/nologin|g' > "${FSMNT}/etc/passwd.tmp"
-mv "${FSMNT}/etc/passwd.tmp" "${FSMNT}/etc/passwd" #
+# Disable direct root login; users in the wheel group can use sudo instead
+echo "Disabling direct root login; users in the wheel group can use sudo instead"
+# Since /etc/passwd is generated from /etc/master.passwd, do not edit it directly but use pw instead
+# chroot "${FSMNT}" pw usermod root -s /usr/sbin/nologin # FIXME: With this, sudo su does not work
+chroot "${FSMNT}" pw lock root # FIXME: With this, sudo su does not work
 
 # Add regular user
 # Ask for username and/or password in case the graphical installer frontend did not supply them
@@ -154,26 +155,38 @@ fi
 # Enable additional services needed for desktop
 echo "Enabling additional services needed for desktop"
 if [ -f "/usr/local/sbin/lightdm" ] ; then
-  chroot ${FSMNT} sysrc lightdm_enable="YES"
+  chroot "${FSMNT}" sysrc lightdm_enable="YES"
 fi
 if [ -f "/usr/local/sbin/gdm" ] ; then
-  chroot ${FSMNT} sysrc gdm_enable="YES"
+  chroot "${FSMNT}" sysrc gdm_enable="YES"
 fi
 if [ -f "/usr/local/etc/rc.d/pcdm" ] ; then
-  chroot ${FSMNT} sysrc pcdm_enable="YES"
+  chroot "${FSMNT}" sysrc pcdm_enable="YES"
 fi
 if [ -f "/usr/local/bin/sddm" ] ; then
-  chroot ${FSMNT} sysrc sddm_enable="YES"
+  chroot "${FSMNT}" sysrc sddm_enable="YES"
 fi
 
-# Transfer settings from running /boot/loader.conf to installed one
-# This simplifies things because we have to worry about it only in one place
-echo "TODO: Carry over (relevant parts of) bootloader configuration to the installed system"
+# Enable sshd if the user has requested it
+if [ "${INSTALLER_ENABLE_SSH}" = "YES" ] ; then
+  chroot "${FSMNT}" sysrc sshd_enable="YES"
+fi
+
+# TODO: Transfer settings from running /boot/loader.conf to installed one
+# https://github.com/furybsd/furybsd-livecd/issues/190
+# Until we have a better solution, hardcode it here too...
+cat >> "${FSMNT}/boot/loader.conf" <<\EOF
 # cp /boot/loader.conf ${FSMNT}/boot
+# Decrease boot verbosity, show splash
+# and fix resolution setting for Intel
+boot_mute="YES"
+beastie_disable="YES"
+autoboot_delay=0
+EOF
 
 # Cleanup
-umount -f "${FSMNT}/dev" >/dev/null 2>/dev/null || true
-zpool export -f "${DESTPOOL}" >/dev/null 2>/dev/null || true
+# umount -f "${FSMNT}/dev" >/dev/null 2>/dev/null || true # Is this needed? TODO: Re-enable if yes
+# zpool export -f "${DESTPOOL}" >/dev/null 2>/dev/null || true # Is this needed? TODO: Re-enable if yes
 echo "Installation finished!"
 
 # Reboot
