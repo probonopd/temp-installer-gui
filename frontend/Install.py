@@ -91,6 +91,9 @@ class InstallWizard(QtWidgets.QWizard, object):
         if os.path.exists(os.path.dirname(__file__)  + "/" + self.installer_script):
             self.installer_script = os.path.dirname(__file__)  + "/" + self.installer_script
 
+        # Make sure it is actually executable
+
+
         self.should_show_last_page = False
         self.error_message_nice = "An unknown error occured."
 
@@ -665,11 +668,14 @@ class DiskPage(QtWidgets.QWizardPage, object):
                 # print(di.keys())
                 # Only show disks that are above minimum_target_disk_size and are writable
                 available_bytes = int(di.get("mediasize").split(" ")[0])
-                if (available_bytes >= wizard.required_mib_on_disk) and di.get("geomname").startswith("rd") == False \
+                # For now, we don't show cd* but once we add burning capabilities we may want to un-blacklist them
+                # TODO: Identify the disk the Live system is running from, and don't offer that
+                if (available_bytes >= wizard.required_mib_on_disk) and di.get("geomname").startswith("cd") == False \
                         and (di.get("geomname").startswith("da0") == False):
                     # item.setTextAlignment()
                     title = "%s on %s (%s GiB)" % (di.get("descr"), di.get("geomname"), f"{(available_bytes // (2 ** 30)):,}")
                     if di.get("geomname").startswith("cd") == True:
+                        # TODO: Add burning powers
                         item = QtWidgets.QListWidgetItem(QtGui.QIcon.fromTheme('drive-optical'), title)
                     else:
                         item = QtWidgets.QListWidgetItem(QtGui.QIcon.fromTheme('drive-harddisk'), title)
