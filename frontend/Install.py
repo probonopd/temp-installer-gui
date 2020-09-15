@@ -670,8 +670,7 @@ class DiskPage(QtWidgets.QWizardPage, object):
                 available_bytes = int(di.get("mediasize").split(" ")[0])
                 # For now, we don't show cd* but once we add burning capabilities we may want to un-blacklist them
                 # TODO: Identify the disk the Live system is running from, and don't offer that
-                if (available_bytes >= wizard.required_mib_on_disk) and di.get("geomname").startswith("cd") == False \
-                        and (di.get("geomname").startswith("da0") == False):
+                if (available_bytes >= wizard.required_mib_on_disk) and di.get("geomname").startswith("cd") == False):
                     # item.setTextAlignment()
                     title = "%s on %s (%s GiB)" % (di.get("descr"), di.get("geomname"), f"{(available_bytes // (2 ** 30)):,}")
                     if di.get("geomname").startswith("cd") == True:
@@ -1037,14 +1036,6 @@ class SuccessPage(QtWidgets.QWizardPage, object):
         print("Preparing SuccessPage")
         super().__init__()
 
-        self.setFinalPage(True) # FIXME: Why does this not remove the Next button?
-        wizard.button(QtWidgets.QWizard.NextButton).setEnabled(False)
-        wizard.button(QtWidgets.QWizard.NextButton).hide()
-        wizard.button(QtWidgets.QWizard.BackButton).setEnabled(False)
-        wizard.button(QtWidgets.QWizard.NextButton).hide()
-        wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
-        wizard.button(QtWidgets.QWizard.CancelButton).hide()
-
         self.setTitle('Installation Complete')
         self.setSubTitle('The installation succeeded.')
 
@@ -1064,6 +1055,17 @@ class SuccessPage(QtWidgets.QWizardPage, object):
 
         label = QtWidgets.QLabel()
         label.setText("FreeBSD has been installed on your computer, click 'Restart' to begin using it.")
+
+    def initializePage(self):
+        print("Displaying SuccessPage")
+
+        self.setFinalPage(True) # FIXME: Why does this not remove the Next button?
+        wizard.button(QtWidgets.QWizard.NextButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.BackButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.NextButton).hide()
+        wizard.button(QtWidgets.QWizard.CancelButton).setEnabled(False)
+        wizard.button(QtWidgets.QWizard.CancelButton).hide()
 
         layout.addWidget(label)
         self.setButtonText(wizard.FinishButton, "Restart")
