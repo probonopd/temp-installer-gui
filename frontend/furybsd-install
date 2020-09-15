@@ -98,7 +98,8 @@ mount -t devfs devfs ${FSMNT}/dev
 
 # Disable direct root login; users in the wheel group can use sudo/doas instead
 echo "Disabling direct root login; users in the wheel group can use sudo/doas instead"
-sed -i -e 's|:/root:/bin/.*|:/root:/bin/nologin|g' "${FSMNT}/etc/passwd"
+cat /etc/passwd | sed -e 's|:/root:/.*$|:/root:/usr/sbin/nologin|g' > "${FSMNT}/etc/passwd.tmp"
+mv "${FSMNT}/etc/passwd.tmp" "${FSMNT}/etc/passwd" # 
 
 # Add regular user
 # Ask for username and/or password in case the graphical installer frontend did not supply them
@@ -171,6 +172,7 @@ echo "Installation finished!"
 
 # Reboot
 if [ -n "${INSTALLER_DEVICE}" ] ; then
+  # Let the graphical installer frontend handle the reboot
   exit 0
 else
   echo "Press any key to reboot..."
