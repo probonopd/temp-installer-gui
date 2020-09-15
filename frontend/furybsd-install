@@ -97,6 +97,7 @@ chroot "${FSMNT}" rm -rf /usr/home/liveuser
 mount -t devfs devfs ${FSMNT}/dev
 
 # Disable direct root login; users in the wheel group can use sudo/doas instead
+echo "Disabling direct root login; users in the wheel group can use sudo/doas instead"
 sed -i -e 's|:/root:/bin/.*|:/root:/bin/nologin|g' "${FSMNT}/etc/passwd"
 
 # Add regular user
