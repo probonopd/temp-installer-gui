@@ -670,7 +670,7 @@ class DiskPage(QtWidgets.QWizardPage, object):
                 available_bytes = int(di.get("mediasize").split(" ")[0])
                 # For now, we don't show cd* but once we add burning capabilities we may want to un-blacklist them
                 # TODO: Identify the disk the Live system is running from, and don't offer that
-                if (available_bytes >= wizard.required_mib_on_disk) and di.get("geomname").startswith("cd") == False):
+                if (available_bytes >= wizard.required_mib_on_disk) and di.get("geomname").startswith("cd") == False:
                     # item.setTextAlignment()
                     title = "%s on %s (%s GiB)" % (di.get("descr"), di.get("geomname"), f"{(available_bytes // (2 ** 30)):,}")
                     if di.get("geomname").startswith("cd") == True:
